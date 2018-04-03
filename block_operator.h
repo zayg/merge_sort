@@ -2,7 +2,7 @@
 
 #pragma once
 
-// IBlockLoader produces the block 
+// IBlockLoader supports block read operations
 class IBlockLoader {
 public:
   IBlockLoader(std::shared_ptr<BlockPtr> blockPtr);
@@ -16,7 +16,7 @@ public:
   // Fetch recordCnt records from the internal buffer. Read Cursor will be
   // advanced once succeed.
   // Wait the uncoming result for timeoutUS.
-  virtual Status Fetch(int recordCnt, vector<RecordType>* buffer,
+  virtual Status Fetch(int recordCnt, vector<RecordType*>* buffer,
       int timeoutUS) = 0;
   // Block size of byte
   virtual Status Size(int32_t* size) = 0;
@@ -27,10 +27,6 @@ using IBlockLoaderPtr = std::shared_ptr<IBlockLoader>;
 // Every time Fetch() succeed, the ring buffer will invalidate the fetched
 // records. Load() will block if ring buffer is full.
 class ExternalBlockLoader : public IBlockLoader {
-};
-
-// DummyBlockLoader is for Blocks stored in memory
-class DummyBlockLoader : public IBlockLoader {
 };
 
 class BlockLoaderBuilder {

@@ -9,11 +9,11 @@ Status SortDriver::Sort() {
   }
 }
 
-// Key observation:
+// Observation:
 // 1. Speed of Memory/Cache access >> Speed of SSD Read
 // 2. Speed of SSD random Read is fast.
 // 3. Average Speed of SSD Sequential Write > Average Speed of SSD Random Write
-// So a possible solution may be:
+// A possible solution may be:
 // 1. Sort in memory can be done in a single thread.
 // 2. Block reads are done asynchronously in some parallel degree.
 // 3. Sort results are dumped sequentially.
@@ -53,7 +53,7 @@ Status SortDriver::sortSSD() {
   // each round to get a sorted record. Then we just put this record to the
   // sinker. It will dump a group records asynchronously.
   LoserTreeSorter sorter(loaders, indexes, meta_.partNum_);
-  // sink sorted result to some target.
+  // sink sorted result to some target device.
   SortSinker sinker;
   // the Sorter will be empty when every loader is fetched to the end of its
   // block.
@@ -66,7 +66,54 @@ Status SortDriver::sortSSD() {
 
   // loading end
   executer.Stop();
+  sinker.Close();
 }
 
+// We assume the result can be stored inside memory
+// A possible solution could be:
+// 1. Merge pairs of Blocks in parallel.
+// 2. Banlance the merge tasks. A very long merge task can be split to several
+//    small ones. (use binary search to determine the merge boundaries.)
+// 3. Inside one merge, judge the minimum and the maximum key between two
+//    to-merge-block first. (since blocks are ordered among one partition)
 Status SortDriver::sortMem() {
+  // A MergeTaskPlanner generates merge plans, every plan is associated with a
+  // FutureGroup. Each plan may split to one or more sub tasks if current merge
+  // plan is too big. It maintains a list of blocks. It is finished until there
+  // is 0 block in the list.
+  MergeTaskPlanner planner(blocks_);
+  // MergeTaskRunner does the actual merge
+  MergeTaskRunner runner;
+  runner.Start();
+  // FutureGroup can be defined recursively. It derives from Future.
+  FutureGroup fg;
+  // sorted result, stored in a single block
+  BlockPtr sorted;
+  do {
+    while (!planner.IsFinish()) {
+      auto task = planner.PopTask();
+      fg.AddFuture(task.GetFuture());
+      runner.AddTask(task);
+    }
+    // wait util 2 tasks are done
+    auto futureVec = fg.Wait(2, -1);
+    if (futureVec.size() == 1) {
+      // get final block
+      sorted = futureVec[0].get();
+      break;
+    } else if (futureVec.size() == 0) {
+      break;
+    }
+    ASSERTION(futureVec.size() == 2, "Logical Error");
+    planner.Add(futureVec[0].get());
+    planner.Add(futureVec[1].get());
+  } while (1);
+
+  // sink sorted result to some target device.
+  SortSinker sinker;
+  auto loader = BlockLoaderBuilder::NewBlockLoader(sorted);
+  loader.Init();
+  while (loader.Fetch(1, buffers) != Status::kEof) {
+    sinker.Add(buffers[0]);
+  }
 }

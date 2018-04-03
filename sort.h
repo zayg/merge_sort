@@ -23,5 +23,5 @@ private:
 
 public:
   SortMeta meta_;
-  vector<Block> blocks_;
+  vector<BlockPtr> blocks_;
 };

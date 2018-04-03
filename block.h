@@ -11,7 +11,7 @@ enum class BlockStorageType {
 struct Block {
   BlockStorageType blkType_; 
   // RefType refType_;
-  // Block data reference. BlockReader will use the reference to read the
+  // Block data reference. BlockLoader will use the reference to read the
   // actual data.
   std::string ref_;
 };
